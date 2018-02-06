@@ -3,7 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-// import 'package:share/share.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+final googleSignIn = new GoogleSignIn();
+final auth = FirebaseAuth.instance;
 
 void main() => runApp(new NonInstantCameraApp());
 
@@ -30,7 +34,26 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   File imageFile;
 
+  Future<Null> _ensureLoggedIn() async {
+    GoogleSignInAccount user = googleSignIn.currentUser;
+    if (user == null)
+      user = await googleSignIn.signInSilently();
+    if (user == null) {
+      await googleSignIn.signIn();
+    }
+
+    if (await auth.currentUser() == null) {
+      GoogleSignInAuthentication credentials =
+      await googleSignIn.currentUser.authentication;
+      await auth.signInWithGoogle(
+        idToken: credentials.idToken,
+        accessToken: credentials.accessToken,
+      );
+    }
+  }
+
   takePhoto() async {
+    await _ensureLoggedIn();
     var _fileName = await ImagePicker.pickImage(source: ImageSource.camera);
     setState(() {
       imageFile = _fileName;
