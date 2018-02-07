@@ -3,8 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 final googleSignIn = new GoogleSignIn();
 final auth = FirebaseAuth.instance;
@@ -19,22 +17,24 @@ class NonInstantCameraApp extends StatelessWidget {
       theme: new ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: new HomePage(),
+      home: new HomePage(title: 'Non-Instant Camera'),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
-  HomePage({Key key}) : super(key: key);
+  HomePage({Key key, this.title}) : super(key: key);
+
+  final String title;
 
   @override
   _HomePageState createState() => new _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  File imageFile;
+  Future<File> _imageFile;
 
-  Future<Null> _ensureLoggedIn() async {
+  _ensureLoggedIn() async {
     GoogleSignInAccount user = googleSignIn.currentUser;
     if (user == null)
       user = await googleSignIn.signInSilently();
@@ -54,16 +54,15 @@ class _HomePageState extends State<HomePage> {
 
   takePhoto() async {
     await _ensureLoggedIn();
-    var _fileName = await ImagePicker.pickImage(source: ImageSource.camera);
     setState(() {
-      imageFile = _fileName;
+      _imageFile = ImagePicker.pickImage(source: ImageSource.camera);
     });
   }
 
   pickExistingImage() async {
-    var _fileName = await ImagePicker.pickImage(source: ImageSource.gallery);
+    await _ensureLoggedIn();
     setState(() {
-      imageFile = _fileName;
+      _imageFile = ImagePicker.pickImage(source: ImageSource.gallery);
     });
   }
 
@@ -80,13 +79,18 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return new Scaffold(
       appBar: new AppBar(
-        title: new Text('Non-Instant Camera'),
+        title: const Text('Image Picker Example'),
       ),
       body: new Center(
-        child: imageFile == null
-            ? new Text('No image selected.')
-            : new Image.file(imageFile),
-      ),
+          child: new FutureBuilder<File>(
+              future: _imageFile,
+              builder: (BuildContext context, AsyncSnapshot<File> snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return new Image.file(snapshot.data);
+                } else {
+                  return const Text('Select an image.');
+                }
+              })),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
