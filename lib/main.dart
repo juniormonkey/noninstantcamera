@@ -32,9 +32,9 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  Future<File> _imageFile;
+  File imageFile;
 
-  _ensureLoggedIn() async {
+  ensureLoggedIn() async {
     GoogleSignInAccount user = googleSignIn.currentUser;
     if (user == null)
       user = await googleSignIn.signInSilently();
@@ -53,16 +53,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   takePhoto() async {
-    await _ensureLoggedIn();
+    var photo = await ImagePicker.pickImage(source: ImageSource.camera);
     setState(() {
-      _imageFile = ImagePicker.pickImage(source: ImageSource.camera);
+      imageFile = photo;
     });
   }
 
   pickExistingImage() async {
-    await _ensureLoggedIn();
+    var existingImage = await ImagePicker.pickImage(source: ImageSource.gallery);
     setState(() {
-      _imageFile = ImagePicker.pickImage(source: ImageSource.gallery);
+      imageFile = existingImage;
     });
   }
 
@@ -79,24 +79,23 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return new Scaffold(
       appBar: new AppBar(
-        title: const Text('Image Picker Example'),
+        title: const Text('Non-Instant Camera'),
       ),
       body: new Center(
-          child: new FutureBuilder<File>(
-              future: _imageFile,
-              builder: (BuildContext context, AsyncSnapshot<File> snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return new Image.file(snapshot.data);
-                } else {
-                  return const Text('Select an image.');
-                }
-              })),
+          child: imageFile == null
+              ? new Text('Select an image.')
+              : new Image.file(imageFile)
+      ),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
         child: new Icon(Icons.add_a_photo),
       ),
       persistentFooterButtons: [
+        new FlatButton(
+          onPressed: ensureLoggedIn,
+          child: new Icon(Icons.lock_open),
+        ),
         new FlatButton(
           onPressed: pickExistingImage,
           child: new Icon(Icons.add),
