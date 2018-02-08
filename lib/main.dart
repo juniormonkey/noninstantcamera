@@ -53,16 +53,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   takePhoto() async {
-    var photo = await ImagePicker.pickImage(source: ImageSource.camera);
+    var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
     setState(() {
-      imageFile = photo;
+      imageFile = _photo;
     });
   }
 
   pickExistingImage() async {
-    var existingImage = await ImagePicker.pickImage(source: ImageSource.gallery);
+    var _existingImage = await ImagePicker.pickImage(source: ImageSource.gallery);
     setState(() {
-      imageFile = existingImage;
+      imageFile = _existingImage;
     });
   }
 
