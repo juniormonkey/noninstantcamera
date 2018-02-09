@@ -17,7 +17,8 @@ final googleSignIn = new GoogleSignIn(
 );
 final analytics = new FirebaseAnalytics();
 final auth = FirebaseAuth.instance;
-final reference = FirebaseDatabase.instance.reference().child('photos');
+final reference = FirebaseDatabase.instance.reference().child(
+    'not-instant-camera');
 
 var rng = new Random();
 FirebaseUser currentFirebaseUser = null;
