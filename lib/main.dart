@@ -20,18 +20,17 @@ final auth = FirebaseAuth.instance;
 final reference = FirebaseDatabase.instance.reference().child('photos');
 
 var rng = new Random();
+FirebaseUser currentFirebaseUser = null;
 
 void main() => runApp(new NonInstantCameraApp());
 
 Future<Null> _ensureLoggedIn() async {
   GoogleSignInAccount user = googleSignIn.currentUser;
-  if (user == null)
-    user = await googleSignIn.signInSilently();
+  if (user == null) user = await googleSignIn.signInSilently();
   if (user == null) {
     await googleSignIn.signIn();
     analytics.logLogin();
   }
-
   if (await auth.currentUser() == null) {
     GoogleSignInAuthentication credentials =
     await googleSignIn.currentUser.authentication;
@@ -40,6 +39,7 @@ Future<Null> _ensureLoggedIn() async {
       accessToken: credentials.accessToken,
     );
   }
+  currentFirebaseUser = await auth.currentUser();
 }
 
 class NonInstantCameraApp extends StatelessWidget {
@@ -72,8 +72,8 @@ class _HomePageState extends State<HomePage> {
     await _ensureLoggedIn();
     reference.push().set({
       'file': _photo.path,
-//      'senderId': googleSignIn.currentUser.id,
-//      'senderEmail': googleSignIn.currentUser.email,
+      'senderId': currentFirebaseUser.uid,
+      'senderEmail': currentFirebaseUser.email,
       'printed': false,
       'rank': rng.nextInt(10000),
     });
@@ -86,12 +86,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   pickExistingImage() async {
-    var _existingImage = await ImagePicker.pickImage(source: ImageSource.gallery);
+    var _existingImage =
+    await ImagePicker.pickImage(source: ImageSource.gallery);
     await _ensureLoggedIn();
     reference.push().set({
       'file': _existingImage.path,
-//      'senderId': googleSignIn.currentUser.id,
-//      'senderEmail': googleSignIn.currentUser.email,
+      'senderId': currentFirebaseUser.uid,
+      'senderEmail': currentFirebaseUser.email,
       'printed': false,
       'rank': rng.nextInt(10000),
     });
@@ -124,8 +125,7 @@ class _HomePageState extends State<HomePage> {
       body: new Center(
           child: imageFile == null
               ? new Text('Select an image.')
-              : new Image.file(imageFile)
-      ),
+              : new Image.file(imageFile)),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
