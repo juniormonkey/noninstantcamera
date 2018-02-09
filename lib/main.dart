@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
@@ -66,41 +67,47 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  File imageFile;
+  // TODO: get this from the Firebase db instead, at random.
+  String imageUrl;
 
-  takePhoto() async {
-    var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
+  Future<String> _store(File image) async {
     await _ensureLoggedIn();
+    int random = rng.nextInt(100000);
+    StorageReference ref =
+    FirebaseStorage.instance.ref().child("image_$random.jpg");
+    StorageUploadTask uploadTask = ref.put(image);
+    Uri downloadUrl = (await uploadTask.future).downloadUrl;
+
     reference.push().set({
-      'file': _photo.path,
+      'file': downloadUrl.toString(),
       'senderId': currentFirebaseUser.uid,
       'senderEmail': currentFirebaseUser.email,
       'printed': false,
       'rank': rng.nextInt(10000),
     });
-    // TODO: actually save the photo to the data store too.
+
+    return downloadUrl.toString();
+  }
+
+  takePhoto() async {
+    await _ensureLoggedIn();
+    var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
+    var _uri = await _store(_photo);
     analytics.logEvent(name: 'new_photo');
     setState(() {
       // TODO: query the database for a random photo, and display that instead.
-      imageFile = _photo;
+      imageUrl = _uri;
     });
   }
 
   pickExistingImage() async {
+    await _ensureLoggedIn();
     var _existingImage =
     await ImagePicker.pickImage(source: ImageSource.gallery);
-    await _ensureLoggedIn();
-    reference.push().set({
-      'file': _existingImage.path,
-      'senderId': currentFirebaseUser.uid,
-      'senderEmail': currentFirebaseUser.email,
-      'printed': false,
-      'rank': rng.nextInt(10000),
-    });
-    // TODO: actually save the image to the data store too.
+    var _uri = await _store(_existingImage);
     analytics.logEvent(name: 'existing_image');
     setState(() {
-      imageFile = _existingImage;
+      imageUrl = _uri;
     });
   }
 
@@ -109,7 +116,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   shareImage() {
-    if (imageFile != null) {
+    if (imageUrl != null) {
       // See https://github.com/flutter/flutter/issues/12264
       // Also "share" only allows sharing of text, not images.
       // Perhaps we need to use android_intent or url_launcher instead?
@@ -124,9 +131,9 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Non-Instant Camera'),
       ),
       body: new Center(
-          child: imageFile == null
+          child: imageUrl == null
               ? new Text('Select an image.')
-              : new Image.file(imageFile)),
+              : new Image.network(imageUrl)),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
