@@ -1,13 +1,46 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 
-final googleSignIn = new GoogleSignIn();
+final googleSignIn = new GoogleSignIn(
+  scopes: [
+    'email',
+    'profile',
+  ],
+);
+final analytics = new FirebaseAnalytics();
 final auth = FirebaseAuth.instance;
+final reference = FirebaseDatabase.instance.reference().child('photos');
+
+var rng = new Random();
 
 void main() => runApp(new NonInstantCameraApp());
+
+Future<Null> _ensureLoggedIn() async {
+  GoogleSignInAccount user = googleSignIn.currentUser;
+  if (user == null)
+    user = await googleSignIn.signInSilently();
+  if (user == null) {
+    await googleSignIn.signIn();
+    analytics.logLogin();
+  }
+
+  if (await auth.currentUser() == null) {
+    GoogleSignInAuthentication credentials =
+    await googleSignIn.currentUser.authentication;
+    await auth.signInWithGoogle(
+      idToken: credentials.idToken,
+      accessToken: credentials.accessToken,
+    );
+  }
+}
 
 class NonInstantCameraApp extends StatelessWidget {
   @override
@@ -34,36 +67,43 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   File imageFile;
 
-  ensureLoggedIn() async {
-    GoogleSignInAccount user = googleSignIn.currentUser;
-    if (user == null)
-      user = await googleSignIn.signInSilently();
-    if (user == null) {
-      await googleSignIn.signIn();
-    }
-
-    if (await auth.currentUser() == null) {
-      GoogleSignInAuthentication credentials =
-      await googleSignIn.currentUser.authentication;
-      await auth.signInWithGoogle(
-        idToken: credentials.idToken,
-        accessToken: credentials.accessToken,
-      );
-    }
-  }
-
   takePhoto() async {
     var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
+    await _ensureLoggedIn();
+    reference.push().set({
+      'file': _photo.path,
+//      'senderId': googleSignIn.currentUser.id,
+//      'senderEmail': googleSignIn.currentUser.email,
+      'printed': false,
+      'rank': rng.nextInt(10000),
+    });
+    // TODO: actually save the photo to the data store too.
+    analytics.logEvent(name: 'new_photo');
     setState(() {
+      // TODO: query the database for a random photo, and display that instead.
       imageFile = _photo;
     });
   }
 
   pickExistingImage() async {
     var _existingImage = await ImagePicker.pickImage(source: ImageSource.gallery);
+    await _ensureLoggedIn();
+    reference.push().set({
+      'file': _existingImage.path,
+//      'senderId': googleSignIn.currentUser.id,
+//      'senderEmail': googleSignIn.currentUser.email,
+      'printed': false,
+      'rank': rng.nextInt(10000),
+    });
+    // TODO: actually save the image to the data store too.
+    analytics.logEvent(name: 'existing_image');
     setState(() {
       imageFile = _existingImage;
     });
+  }
+
+  ensureLoggedIn() async {
+    await _ensureLoggedIn();
   }
 
   shareImage() {
