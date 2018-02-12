@@ -18,13 +18,16 @@ final googleSignIn = new GoogleSignIn(
 );
 final analytics = new FirebaseAnalytics();
 final auth = FirebaseAuth.instance;
-final reference = FirebaseDatabase.instance.reference().child(
-    'not-instant-camera');
+final reference = FirebaseDatabase.instance.reference().child('photo');
 
 var rng = new Random();
 FirebaseUser currentFirebaseUser = null;
 
-void main() => runApp(new NonInstantCameraApp());
+void main() {
+  FirebaseDatabase.instance.setPersistenceEnabled(true);
+  reference.keepSynced(true);
+  runApp(new NonInstantCameraApp());
+}
 
 Future<Null> _ensureLoggedIn() async {
   GoogleSignInAccount user = googleSignIn.currentUser;
@@ -67,10 +70,13 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // TODO: get this from the Firebase db instead, at random.
+  bool waiting = false;
   String imageUrl;
 
-  Future<String> _store(File image) async {
+  _store(File image) async {
+    setState(() {
+      waiting = true;
+    });
     await _ensureLoggedIn();
     int random = rng.nextInt(100000);
     StorageReference ref =
@@ -82,33 +88,32 @@ class _HomePageState extends State<HomePage> {
       'file': downloadUrl.toString(),
       'senderId': currentFirebaseUser.uid,
       'senderEmail': currentFirebaseUser.email,
-      'printed': false,
-      'rank': rng.nextInt(10000),
-    });
+    }, priority: rng.nextInt(10000));
 
-    return downloadUrl.toString();
+    var _randomPhoto = reference.orderByPriority().limitToFirst(1);
+    var _dataSnapshot = await _randomPhoto.once();
+    _dataSnapshot.value.forEach((key, value) {
+      setState(() {
+        waiting = false;
+        imageUrl = value['file'];
+      });
+      //  _randomPhoto.reference().remove();
+    });
   }
 
   takePhoto() async {
     await _ensureLoggedIn();
     var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
-    var _uri = await _store(_photo);
+    await _store(_photo);
     analytics.logEvent(name: 'new_photo');
-    setState(() {
-      // TODO: query the database for a random photo, and display that instead.
-      imageUrl = _uri;
-    });
   }
 
   pickExistingImage() async {
     await _ensureLoggedIn();
     var _existingImage =
     await ImagePicker.pickImage(source: ImageSource.gallery);
-    var _uri = await _store(_existingImage);
+    await _store(_existingImage);
     analytics.logEvent(name: 'existing_image');
-    setState(() {
-      imageUrl = _uri;
-    });
   }
 
   ensureLoggedIn() async {
@@ -131,9 +136,11 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Non-Instant Camera'),
       ),
       body: new Center(
-          child: imageUrl == null
+          child: waiting
+              ? const CircularProgressIndicator()
+              : (imageUrl == null
               ? new Text('Select an image.')
-              : new Image.network(imageUrl)),
+              : new Image.network(imageUrl))),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
