@@ -4,13 +4,14 @@ description: A decidedly not instant camera.
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^0.1.0
-  image_picker: ^0.2.1
-  google_sign_in: ^2.0.1
-  firebase_analytics: ^0.2.2
-  firebase_auth: ^0.4.4
-  firebase_database: ^0.3.4
-  firebase_storage: ^0.1.2
+  cupertino_icons: ^0.1.2
+  image: ^1.1.31
+  image_picker: ^0.4.1
+  google_sign_in: ^3.0.3
+  firebase_analytics: ^0.3.3
+  firebase_auth: ^0.5.9
+  firebase_database: ^0.4.6
+  path_provider: ^0.4.0
 
 dev_dependencies:
   flutter_test:
