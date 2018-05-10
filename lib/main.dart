@@ -6,13 +6,14 @@ import 'dart:math';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as Im;
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -24,9 +25,7 @@ final googleSignIn = new GoogleSignIn(
 );
 final analytics = new FirebaseAnalytics();
 final auth = FirebaseAuth.instance;
-final reference = FirebaseDatabase.instance.reference().child('photo-bytes');
-final Query randomPhoto = reference.orderByPriority().limitToFirst(1);
-String randomPhotoKey;
+final reference = FirebaseDatabase.instance.reference().child('photo');
 
 var rng = new Random();
 FirebaseUser currentFirebaseUser;
@@ -83,26 +82,16 @@ class _HomePageState extends State<HomePage> {
 
   DatabaseError _error;
   bool _waiting = false;
-  File _cachedImage;
   File _imageFile;
-  String _randomPhotoKey;
 
   @override
   void initState() {
     super.initState();
 
-    randomPhoto.onValue.listen((Event event) async {
-      print("### randomPhoto.onValue: ${event.snapshot}");
+    reference.onValue.listen((Event event) async {
       if (event.snapshot.value != null) {
         event.snapshot.value.forEach((key, value) async {
-          _randomPhotoKey = key;
-          Directory photosDir = await getTemporaryDirectory();
-          String timestamp =
-          new DateFormat('yyyyMMddHms').format(new DateTime.now());
-          _cachedImage =
-              await new File('${photosDir.path}/photo_${timestamp}.png').create();
-          _cachedImage.writeAsBytesSync(BASE64.decode(value[BYTES_FIELD]));
-          print("### randomPhoto.onValue: written to ${_cachedImage.path}");
+          var cachedFile = await cache(value['file']);
         });
       }
     }, onError: (Object o) {
@@ -113,41 +102,65 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<String> _localFileName(String url) async {
+    Directory photosDir = await getTemporaryDirectory();
+    var filename = Uri.parse(url).pathSegments.last;
+    return '${photosDir.path}/$filename';
+  }
+
+  Future<File> cache(String url) async {
+    var file = new File(await _localFileName(url));
+    if (await file.exists()) {
+      return file;
+    }
+
+    final response = await http.get(url);
+    if (response.statusCode != 200) {
+      print('HTTP error: ${response.statusCode}');
+      return null;
+    }
+
+    await file.writeAsBytes(response.bodyBytes);
+    return file;
+  }
+
   _store(File image) async {
     await _ensureLoggedIn();
 
+    String timestamp =
+    new DateFormat('yyyyMMddHms').format(new DateTime.now());
+    StorageReference ref =
+    FirebaseStorage.instance.ref().child('image_${timestamp}.jpg');
+    StorageUploadTask uploadTask = ref.put(image);
+    Uri downloadUrl = (await uploadTask.future).downloadUrl;
+
     int priority = rng.nextInt(MAX_PRIORITY);
-    print ("#### _store(): new priority ${priority}");
     reference.push().set({
-      BYTES_FIELD: _compressAndEncode(image),
+      'file': downloadUrl.toString(),
       'senderId': currentFirebaseUser.uid,
       'senderEmail': currentFirebaseUser.email,
     }, priority: priority);
   }
 
-  String _compressAndEncode(File imageFile) {
-    Im.Image image = Im.decodeImage(imageFile.readAsBytesSync());
-    Im.Image smallerImage = Im.copyResize(image, 1500);
-
-    return BASE64.encode(Im.encodePng(smallerImage));
-  }
-
   _display() async {
-    print("### _display: ${_randomPhotoKey}, ${_cachedImage}");
-    if (_cachedImage!= null && _randomPhotoKey != null) {
-      setState(() {
-        _waiting = false;
-        _imageFile = _cachedImage;
-      });
-      // Shuffle instead of remove. TODO(martin): reconsider this perhaps?
-      // _randomPhoto.reference().remove();
-      int priority = rng.nextInt(MAX_PRIORITY);
-      print ("#### _display(): new priority ${priority}");
-      randomPhoto
-          .reference()
-          .child(_randomPhotoKey)
-          .setPriority(priority);
-    }
+    var _randomPhoto = reference.orderByPriority().limitToFirst(1);
+    var _dataSnapshot = await _randomPhoto.once();
+    _dataSnapshot.value.forEach((key, value) async {
+      var cachedFile = await cache(value['file']);
+      if (cachedFile != null) {
+        setState(() {
+          _waiting = false;
+          _imageFile = cachedFile;
+        });
+        // Shuffle instead of remove. TODO(martin): reconsider this perhaps?
+        // _randomPhoto.reference().remove();
+        int priority = rng.nextInt(MAX_PRIORITY);
+        _randomPhoto
+            .reference()
+            .child(key)
+            .setPriority(priority);
+      }
+    });
   }
 
   takePhoto() async {
@@ -181,7 +194,6 @@ class _HomePageState extends State<HomePage> {
   shareImage() {
     if (_imageFile != null) {
       try {
-        print('### shareImage: "${_imageFile.path}"');
         final channel = const MethodChannel(
             'channel:au.id.martinstrauss.noninstantcamera.share/share');
         channel.invokeMethod('shareFile', basename(_imageFile.path));
