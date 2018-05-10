@@ -25,13 +25,14 @@ final googleSignIn = new GoogleSignIn(
 final analytics = new FirebaseAnalytics();
 final auth = FirebaseAuth.instance;
 final reference = FirebaseDatabase.instance.reference().child('photo-bytes');
+final Query randomPhoto = reference.orderByPriority().limitToFirst(1);
+String randomPhotoKey;
 
 var rng = new Random();
 FirebaseUser currentFirebaseUser;
 
 void main() {
   FirebaseDatabase.instance.setPersistenceEnabled(true);
-  reference.keepSynced(true);
   runApp(new NonInstantCameraApp());
 }
 
@@ -78,18 +79,50 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   static const String BYTES_FIELD = 'bytes';
+  static const int MAX_PRIORITY = 10000;
 
-  bool waiting = false;
-  File imageFile;
+  DatabaseError _error;
+  bool _waiting = false;
+  File _cachedImage;
+  File _imageFile;
+  String _randomPhotoKey;
+
+  @override
+  void initState() {
+    super.initState();
+
+    randomPhoto.onValue.listen((Event event) async {
+      print("### randomPhoto.onValue: ${event.snapshot}");
+      if (event.snapshot.value != null) {
+        event.snapshot.value.forEach((key, value) async {
+          _randomPhotoKey = key;
+          Directory photosDir = await getTemporaryDirectory();
+          String timestamp =
+          new DateFormat('yyyyMMddHms').format(new DateTime.now());
+          _cachedImage =
+              await new File('${photosDir.path}/photo_${timestamp}.png').create();
+          _cachedImage.writeAsBytesSync(BASE64.decode(value[BYTES_FIELD]));
+          print("### randomPhoto.onValue: written to ${_cachedImage.path}");
+        });
+      }
+    }, onError: (Object o) {
+      final DatabaseError error = o;
+      setState(() {
+        _error = error;
+      });
+    });
+  }
 
   _store(File image) async {
     await _ensureLoggedIn();
 
+    int priority = rng.nextInt(MAX_PRIORITY);
+    print ("#### _store(): new priority ${priority}");
     reference.push().set({
       BYTES_FIELD: _compressAndEncode(image),
       'senderId': currentFirebaseUser.uid,
       'senderEmail': currentFirebaseUser.email,
-    }, priority: rng.nextInt(10000));
+    }, priority: priority);
   }
 
   String _compressAndEncode(File imageFile) {
@@ -100,27 +133,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   _display() async {
-    var _randomPhoto = reference.orderByPriority().limitToFirst(1);
-    var _dataSnapshot = await _randomPhoto.once();
-    Directory photosDir = await getTemporaryDirectory();
-    //Directory photosDir = await getApplicationDocumentsDirectory();
-    String timestamp = new DateFormat('yyyyMMddHms').format(new DateTime.now());
-    var file =
-        await new File('${photosDir.path}/photo_${timestamp}.png').create();
-    _dataSnapshot.value.forEach((key, value) {
-      file.writeAsBytesSync(BASE64.decode(value[BYTES_FIELD]));
+    print("### _display: ${_randomPhotoKey}, ${_cachedImage}");
+    if (_cachedImage!= null && _randomPhotoKey != null) {
       setState(() {
-        waiting = false;
-        imageFile = file;
+        _waiting = false;
+        _imageFile = _cachedImage;
       });
-      //  _randomPhoto.reference().remove();
-      _randomPhoto.reference().child(key).setPriority(rng.nextInt(10000));
-    });
+      // Shuffle instead of remove. TODO(martin): reconsider this perhaps?
+      // _randomPhoto.reference().remove();
+      int priority = rng.nextInt(MAX_PRIORITY);
+      print ("#### _display(): new priority ${priority}");
+      randomPhoto
+          .reference()
+          .child(_randomPhotoKey)
+          .setPriority(priority);
+    }
   }
 
   takePhoto() async {
     setState(() {
-      waiting = true;
+      _waiting = true;
     });
     await _ensureLoggedIn();
     var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
@@ -131,7 +163,7 @@ class _HomePageState extends State<HomePage> {
 
   pickExistingImage() async {
     setState(() {
-      waiting = true;
+      _waiting = true;
     });
     await _ensureLoggedIn();
     var _existingImage =
@@ -147,12 +179,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   shareImage() {
-    if (imageFile != null) {
+    if (_imageFile != null) {
       try {
-        print('### shareImage: "${imageFile.path}"');
+        print('### shareImage: "${_imageFile.path}"');
         final channel = const MethodChannel(
             'channel:au.id.martinstrauss.noninstantcamera.share/share');
-        channel.invokeMethod('shareFile', basename(imageFile.path));
+        channel.invokeMethod('shareFile', basename(_imageFile.path));
       } catch (e) {
         print('Share error: $e');
       }
@@ -165,12 +197,7 @@ class _HomePageState extends State<HomePage> {
       appBar: new AppBar(
         title: const Text('Non-Instant Camera'),
       ),
-      body: new Center(
-          child: waiting
-              ? const CircularProgressIndicator()
-              : (imageFile == null
-                  ? new Text('Select an image.')
-                  : new Image.file(imageFile))),
+      body: new Center(child: _imageViewer()),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
@@ -179,17 +206,33 @@ class _HomePageState extends State<HomePage> {
       persistentFooterButtons: [
         new FlatButton(
           onPressed: ensureLoggedIn,
-          child: new Icon(currentFirebaseUser == null ? Icons.lock_outline : Icons.lock_open),
+          child: new Icon(currentFirebaseUser == null
+              ? Icons.lock_outline
+              : Icons.lock_open),
         ),
         new FlatButton(
           onPressed: pickExistingImage,
           child: new Icon(Icons.add),
         ),
         new FlatButton(
-          onPressed: imageFile == null ? null : shareImage,
+          onPressed: _imageFile == null ? null : shareImage,
           child: new Icon(Icons.share),
         ),
       ],
     );
+  }
+
+  Widget _imageViewer() {
+    if (_waiting) {
+      return const CircularProgressIndicator();
+    }
+    if (_imageFile == null) {
+      if (_error != null) {
+        return new Text('Error: ${_error.code} ${_error.message}');
+      } else {
+        return new Text('Select an image');
+      }
+    }
+    return new Image.file(_imageFile);
   }
 }
