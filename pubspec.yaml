@@ -12,6 +12,7 @@ dependencies:
   firebase_auth: ^0.5.9
   firebase_database: ^0.4.6
   path_provider: ^0.4.0
+  intl: ^0.15.6
 
 dev_dependencies:
   flutter_test:

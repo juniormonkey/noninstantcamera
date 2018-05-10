@@ -7,11 +7,13 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
-//import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as Im;
+import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 
 final googleSignIn = new GoogleSignIn(
@@ -48,6 +50,7 @@ Future<Null> _ensureLoggedIn() async {
       accessToken: credentials.accessToken,
     );
   }
+
   currentFirebaseUser = await auth.currentUser();
 }
 
@@ -74,17 +77,16 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const String BYTES_FIELD = 'bytes';
+
   bool waiting = false;
   File imageFile;
 
   _store(File image) async {
-    setState(() {
-      waiting = true;
-    });
     await _ensureLoggedIn();
 
     reference.push().set({
-      'bytes': _compressAndEncode(image),
+      BYTES_FIELD: _compressAndEncode(image),
       'senderId': currentFirebaseUser.uid,
       'senderEmail': currentFirebaseUser.email,
     }, priority: rng.nextInt(10000));
@@ -100,10 +102,13 @@ class _HomePageState extends State<HomePage> {
   _display() async {
     var _randomPhoto = reference.orderByPriority().limitToFirst(1);
     var _dataSnapshot = await _randomPhoto.once();
-    Directory tempDir = await getTemporaryDirectory();
+    Directory photosDir = await getTemporaryDirectory();
+    //Directory photosDir = await getApplicationDocumentsDirectory();
+    String timestamp = new DateFormat('yyyyMMddHms').format(new DateTime.now());
+    var file =
+        await new File('${photosDir.path}/photo_${timestamp}.png').create();
     _dataSnapshot.value.forEach((key, value) {
-      var file = File(tempDir.path + '/photo.png')
-        ..writeAsBytesSync(BASE64.decode(value['bytes']));
+      file.writeAsBytesSync(BASE64.decode(value[BYTES_FIELD]));
       setState(() {
         waiting = false;
         imageFile = file;
@@ -114,6 +119,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   takePhoto() async {
+    setState(() {
+      waiting = true;
+    });
     await _ensureLoggedIn();
     var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
     await _store(_photo);
@@ -122,6 +130,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   pickExistingImage() async {
+    setState(() {
+      waiting = true;
+    });
     await _ensureLoggedIn();
     var _existingImage =
         await ImagePicker.pickImage(source: ImageSource.gallery);
@@ -132,14 +143,19 @@ class _HomePageState extends State<HomePage> {
 
   ensureLoggedIn() async {
     await _ensureLoggedIn();
+    setState(() {});
   }
 
   shareImage() {
     if (imageFile != null) {
-      // See https://github.com/flutter/flutter/issues/12264
-      // Also "share" only allows sharing of text, not images.
-      // Perhaps we need to use android_intent or url_launcher instead?
-      // share(imageFile.path);
+      try {
+        print('### shareImage: "${imageFile.path}"');
+        final channel = const MethodChannel(
+            'channel:au.id.martinstrauss.noninstantcamera.share/share');
+        channel.invokeMethod('shareFile', basename(imageFile.path));
+      } catch (e) {
+        print('Share error: $e');
+      }
     }
   }
 
@@ -163,14 +179,14 @@ class _HomePageState extends State<HomePage> {
       persistentFooterButtons: [
         new FlatButton(
           onPressed: ensureLoggedIn,
-          child: new Icon(Icons.lock_open),
+          child: new Icon(currentFirebaseUser == null ? Icons.lock_outline : Icons.lock_open),
         ),
         new FlatButton(
           onPressed: pickExistingImage,
           child: new Icon(Icons.add),
         ),
         new FlatButton(
-          onPressed: shareImage,
+          onPressed: imageFile == null ? null : shareImage,
           child: new Icon(Icons.share),
         ),
       ],
