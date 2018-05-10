@@ -1,7 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:collection';
 import 'dart:io';
 import 'dart:math';
+
+import 'package:connectivity/connectivity.dart';
 
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -84,14 +86,19 @@ class _HomePageState extends State<HomePage> {
   bool _waiting = false;
   File _imageFile;
 
+  StreamSubscription<Event> _dbSubscription;
+  StreamSubscription<ConnectivityResult> _connectivitySubscription;
+
+  Queue<String> uploadQueue = new Queue();
+
   @override
   void initState() {
     super.initState();
 
-    reference.onValue.listen((Event event) async {
+    _dbSubscription = reference.onValue.listen((Event event) async {
       if (event.snapshot.value != null) {
         event.snapshot.value.forEach((key, value) async {
-          var cachedFile = await cache(value['file']);
+          await cache(value['file']);
         });
       }
     }, onError: (Object o) {
@@ -100,23 +107,48 @@ class _HomePageState extends State<HomePage> {
         _error = error;
       });
     });
+
+    _connectivitySubscription = new Connectivity()
+        .onConnectivityChanged
+        .listen((ConnectivityResult result) async {
+      if (result == ConnectivityResult.none) {
+        // Don't try to upload if there's no Internet.
+        return null;
+      }
+      var filename;
+      while(filename = uploadQueue.removeFirst() != null) {
+        await _upload(filename);
+      };
+    });
   }
 
-  Future<String> _localFileName(String url) async {
+  dispose() {
+    _dbSubscription.cancel();
+    _connectivitySubscription.cancel();
+  }
+
+  Future<String> _localFileName(String basename) async {
     Directory photosDir = await getTemporaryDirectory();
-    var filename = Uri.parse(url).pathSegments.last;
-    return '${photosDir.path}/$filename';
+    return '${photosDir.path}/$basename';
   }
 
   Future<File> cache(String url) async {
-    var file = new File(await _localFileName(url));
+    var file = new File(await _localFileName(Uri.parse(url).pathSegments.last));
     if (await file.exists()) {
       return file;
     }
 
+    final connectivityResult = await (new Connectivity().checkConnectivity());
+    if (connectivityResult == ConnectivityResult.none) {
+      // Don't try to fetch from cache if there's no Internet.
+      return null;
+    }
+
+    await _ensureLoggedIn();
     final response = await http.get(url);
     if (response.statusCode != 200) {
       print('HTTP error: ${response.statusCode}');
+      print(response.body);
       return null;
     }
 
@@ -125,49 +157,79 @@ class _HomePageState extends State<HomePage> {
   }
 
   _store(File image) async {
-    await _ensureLoggedIn();
+    print('### _store(${image.path})');
+    String timestamp = new DateFormat('yyyyMMddHms').format(new DateTime.now());
+    String filename = await _localFileName('image_$timestamp.jpg');
+    await image.copy(filename);
 
-    String timestamp =
-    new DateFormat('yyyyMMddHms').format(new DateTime.now());
-    StorageReference ref =
-    FirebaseStorage.instance.ref().child('image_${timestamp}.jpg');
-    StorageUploadTask uploadTask = ref.put(image);
-    Uri downloadUrl = (await uploadTask.future).downloadUrl;
-
-    int priority = rng.nextInt(MAX_PRIORITY);
-    reference.push().set({
-      'file': downloadUrl.toString(),
-      'senderId': currentFirebaseUser.uid,
-      'senderEmail': currentFirebaseUser.email,
-    }, priority: priority);
+    final connectivityResult = await (new Connectivity().checkConnectivity());
+    if (connectivityResult == ConnectivityResult.none) {
+      print('### _store(): no internet');
+      // Don't try to upload if there's no Internet.
+      uploadQueue.add(filename);
+    } else {
+      print('### _store(): uploading');
+      _upload(filename);
+    }
   }
 
+  _upload(String filename) async {
+    print('### _upload($filename)');
+    await _ensureLoggedIn();
+
+    File imageFile = new File(filename);
+    StorageReference ref =
+        FirebaseStorage.instance.ref().child(basename(imageFile.path));
+    StorageUploadTask uploadTask = ref.putFile(imageFile);
+    try {
+      Uri downloadUrl = (await uploadTask.future).downloadUrl;
+
+      int priority = rng.nextInt(MAX_PRIORITY);
+      reference.push().set({
+        'file': downloadUrl.toString(),
+        'senderId': currentFirebaseUser.uid,
+        'senderEmail': currentFirebaseUser.email,
+      }, priority: priority);
+    } catch (e) {
+      print ('ERROR while uploading: $e');
+      uploadQueue.add(filename);
+    }
+  }
+
+  static const int MAX_NUM_RETRIES = 10;
+
   _display() async {
-    var _randomPhoto = reference.orderByPriority().limitToFirst(1);
-    var _dataSnapshot = await _randomPhoto.once();
-    _dataSnapshot.value.forEach((key, value) async {
-      var cachedFile = await cache(value['file']);
+    print('### _display()');
+    var randomPhoto = reference.orderByPriority().limitToFirst(MAX_NUM_RETRIES);
+    var cachedFile;
+    var cachedKey;
+
+    var dataSnapshot = await randomPhoto.once();
+    for (var key in dataSnapshot.value.keys) {
+      print('### _display(): trying ${dataSnapshot.value[key]['file']}');
+      cachedFile = await cache(dataSnapshot.value[key]['file']);
+      print('### _display(): cache is $cachedFile');
       if (cachedFile != null) {
-        setState(() {
-          _waiting = false;
-          _imageFile = cachedFile;
-        });
-        // Shuffle instead of remove. TODO(martin): reconsider this perhaps?
-        // _randomPhoto.reference().remove();
-        int priority = rng.nextInt(MAX_PRIORITY);
-        _randomPhoto
-            .reference()
-            .child(key)
-            .setPriority(priority);
+        cachedKey = key;
+        break;
       }
-    });
+    }
+    if (cachedFile != null) {
+      setState(() {
+        _waiting = false;
+        _imageFile = cachedFile;
+      });
+      // Shuffle instead of remove. TODO(martin): reconsider this perhaps?
+      // _randomPhoto.reference().remove();
+      int priority = rng.nextInt(MAX_PRIORITY);
+      randomPhoto.reference().child(cachedKey).setPriority(priority);
+    }
   }
 
   takePhoto() async {
     setState(() {
       _waiting = true;
     });
-    await _ensureLoggedIn();
     var _photo = await ImagePicker.pickImage(source: ImageSource.camera);
     await _store(_photo);
     await _display();
@@ -178,7 +240,6 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _waiting = true;
     });
-    await _ensureLoggedIn();
     var _existingImage =
         await ImagePicker.pickImage(source: ImageSource.gallery);
     await _store(_existingImage);
