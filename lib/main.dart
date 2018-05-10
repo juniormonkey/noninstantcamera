@@ -157,24 +157,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   _store(File image) async {
-    print('### _store(${image.path})');
     String timestamp = new DateFormat('yyyyMMddHms').format(new DateTime.now());
     String filename = await _localFileName('image_$timestamp.jpg');
     await image.copy(filename);
 
     final connectivityResult = await (new Connectivity().checkConnectivity());
     if (connectivityResult == ConnectivityResult.none) {
-      print('### _store(): no internet');
       // Don't try to upload if there's no Internet.
       uploadQueue.add(filename);
     } else {
-      print('### _store(): uploading');
       _upload(filename);
     }
   }
 
   _upload(String filename) async {
-    print('### _upload($filename)');
     await _ensureLoggedIn();
 
     File imageFile = new File(filename);
@@ -199,16 +195,13 @@ class _HomePageState extends State<HomePage> {
   static const int MAX_NUM_RETRIES = 10;
 
   _display() async {
-    print('### _display()');
     var randomPhoto = reference.orderByPriority().limitToFirst(MAX_NUM_RETRIES);
     var cachedFile;
     var cachedKey;
 
     var dataSnapshot = await randomPhoto.once();
     for (var key in dataSnapshot.value.keys) {
-      print('### _display(): trying ${dataSnapshot.value[key]['file']}');
       cachedFile = await cache(dataSnapshot.value[key]['file']);
-      print('### _display(): cache is $cachedFile');
       if (cachedFile != null) {
         cachedKey = key;
         break;
