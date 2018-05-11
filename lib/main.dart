@@ -37,25 +37,6 @@ void main() {
   runApp(new NonInstantCameraApp());
 }
 
-Future<Null> _ensureLoggedIn() async {
-  if (await auth.currentUser() == null) {
-    GoogleSignInAccount user = googleSignIn.currentUser;
-    if (user == null) user = await googleSignIn.signInSilently();
-    if (user == null) {
-      await googleSignIn.signIn();
-      analytics.logLogin();
-    }
-    GoogleSignInAuthentication credentials =
-        await googleSignIn.currentUser.authentication;
-    await auth.signInWithGoogle(
-      idToken: credentials.idToken,
-      accessToken: credentials.accessToken,
-    );
-  }
-
-  currentFirebaseUser = await auth.currentUser();
-}
-
 class NonInstantCameraApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -82,9 +63,10 @@ class _HomePageState extends State<HomePage> {
   static const String BYTES_FIELD = 'bytes';
   static const int MAX_PRIORITY = 10000;
 
-  DatabaseError _error;
+  String _placeholderText = "Select an image";
   bool _waiting = false;
   File _imageFile;
+  BuildContext _context;
 
   StreamSubscription<Event> _dbSubscription;
   StreamSubscription<ConnectivityResult> _connectivitySubscription;
@@ -103,9 +85,7 @@ class _HomePageState extends State<HomePage> {
       }
     }, onError: (Object o) {
       final DatabaseError error = o;
-      setState(() {
-        _error = error;
-      });
+      error('DatabaseError: ${error.code} ${error.message}');
     });
 
     _connectivitySubscription = new Connectivity()
@@ -113,18 +93,46 @@ class _HomePageState extends State<HomePage> {
         .listen((ConnectivityResult result) async {
       if (result == ConnectivityResult.none) {
         // Don't try to upload if there's no Internet.
-        return null;
+        return;
+      }
+      if (uploadQueue.length == 0) {
+        // Don't try to remove anything if the queue is empty.
+        return;
       }
       var filename;
-      while(filename = uploadQueue.removeFirst() != null) {
+      while (filename = uploadQueue.removeFirst() != null) {
         await _upload(filename);
-      };
+      }
+      ;
     });
   }
 
   dispose() {
     _dbSubscription.cancel();
     _connectivitySubscription.cancel();
+  }
+
+  Future<Null> _ensureLoggedIn() async {
+    try {
+      if (await auth.currentUser() == null) {
+        GoogleSignInAccount user = googleSignIn.currentUser;
+        if (user == null) user = await googleSignIn.signInSilently();
+        if (user == null) {
+          await googleSignIn.signIn();
+          analytics.logLogin();
+        }
+        GoogleSignInAuthentication credentials =
+            await googleSignIn.currentUser.authentication;
+        await auth.signInWithGoogle(
+          idToken: credentials.idToken,
+          accessToken: credentials.accessToken,
+        );
+      }
+
+      currentFirebaseUser = await auth.currentUser();
+    } catch (e) {
+      error('_ensureLoggedIn: $e');
+    }
   }
 
   Future<String> _localFileName(String basename) async {
@@ -147,7 +155,7 @@ class _HomePageState extends State<HomePage> {
     await _ensureLoggedIn();
     final response = await http.get(url);
     if (response.statusCode != 200) {
-      print('HTTP error: ${response.statusCode}');
+      error('HTTP error: ${response.statusCode}');
       print(response.body);
       return null;
     }
@@ -187,7 +195,7 @@ class _HomePageState extends State<HomePage> {
         'senderEmail': currentFirebaseUser.email,
       }, priority: priority);
     } catch (e) {
-      print ('ERROR while uploading: $e');
+      error('_upload: $e');
       uploadQueue.add(filename);
     }
   }
@@ -242,6 +250,7 @@ class _HomePageState extends State<HomePage> {
 
   ensureLoggedIn() async {
     await _ensureLoggedIn();
+    notify("Signed in successfully.");
     setState(() {});
   }
 
@@ -252,7 +261,7 @@ class _HomePageState extends State<HomePage> {
             'channel:au.id.martinstrauss.noninstantcamera.share/share');
         channel.invokeMethod('shareFile', basename(_imageFile.path));
       } catch (e) {
-        print('Share error: $e');
+        error('shareImage: $e');
       }
     }
   }
@@ -260,10 +269,10 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return new Scaffold(
-      appBar: new AppBar(
-        title: const Text('Non-Instant Camera'),
-      ),
-      body: new Center(child: _imageViewer()),
+      body: new Builder(builder: (BuildContext context) {
+        _context = context;
+        return new Center(child: _imageViewer());
+      }),
       floatingActionButton: new FloatingActionButton(
         onPressed: takePhoto,
         tooltip: 'Take new photo',
@@ -293,12 +302,25 @@ class _HomePageState extends State<HomePage> {
       return const CircularProgressIndicator();
     }
     if (_imageFile == null) {
-      if (_error != null) {
-        return new Text('Error: ${_error.code} ${_error.message}');
-      } else {
-        return new Text('Select an image');
-      }
+      return new Text(_placeholderText);
     }
     return new Image.file(_imageFile);
+  }
+
+  void notify(String message) {
+    print(message);
+    if (_context != null) {
+      Scaffold
+          .of(_context)
+          .showSnackBar(new SnackBar(content: new Text(message)));
+    }
+  }
+
+  void error(String message) {
+    message = 'ERROR: $message';
+    setState(() {
+      _placeholderText = message;
+    });
+    notify(message);
   }
 }
