@@ -1,5 +1,5 @@
-name: noninstantcamera
-description: A decidedly not instant camera.
+name: Uncanny Camera
+description: A possessed camera. Not the photos you deserve, but the photos you need.
 
 dependencies:
   flutter:
