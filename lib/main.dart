@@ -183,21 +183,6 @@ class _HomePageState extends State<HomePage> {
 
     File imageFile = new File(filename);
     StorageReference ref =
-<<<<<<< HEAD
-    FirebaseStorage.instance.ref().child("image_$random.jpg");
-    StorageUploadTask uploadTask = ref.put(image);
-    Uri downloadUrl = (await uploadTask.future).downloadUrl;
-
-    reference.push().set({
-      'file': downloadUrl.toString(),
-      'senderId': currentFirebaseUser.uid,
-      'senderEmail': currentFirebaseUser.email,
-    }, priority: rng.nextInt(10000));
-
-    var _randomPhoto = reference.orderByPriority().limitToFirst(1);
-    var _dataSnapshot = await _randomPhoto.once();
-    _dataSnapshot.value.forEach((key, value) {
-=======
         FirebaseStorage.instance.ref().child(basename(imageFile.path));
     StorageUploadTask uploadTask = ref.putFile(imageFile);
     try {
@@ -231,7 +216,6 @@ class _HomePageState extends State<HomePage> {
       }
     }
     if (cachedFile != null) {
->>>>>>> f4dcbe80501362634c534084a10a4c6f28a3ecdc
       setState(() {
         _waiting = false;
         _imageFile = cachedFile;
