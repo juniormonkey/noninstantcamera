@@ -81,7 +81,7 @@ class _HomePageState extends State<HomePage> {
     int random = rng.nextInt(100000);
     StorageReference ref =
     FirebaseStorage.instance.ref().child("image_$random.jpg");
-    StorageUploadTask uploadTask = ref.put(image); 
+    StorageUploadTask uploadTask = ref.put(image);
     Uri downloadUrl = (await uploadTask.future).downloadUrl;
 
     reference.push().set({

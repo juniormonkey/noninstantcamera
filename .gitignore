@@ -9,3 +9,5 @@ ios/.generated/
 packages
 pubspec.lock
 .flutter-plugins
+flutter_01.log
+flutter_02.log
