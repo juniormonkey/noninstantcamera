@@ -85,7 +85,7 @@ class _HomePageState extends State<HomePage> {
       }
     }, onError: (Object o) {
       final DatabaseError error = o;
-      error('DatabaseError: ${error.code} ${error.message}');
+      print('DatabaseError: ${error.code} ${error.message}');
     });
 
     _connectivitySubscription = new Connectivity()
@@ -103,13 +103,13 @@ class _HomePageState extends State<HomePage> {
       while (filename = uploadQueue.removeFirst() != null) {
         await _upload(filename);
       }
-      ;
     });
   }
 
   dispose() {
     _dbSubscription.cancel();
     _connectivitySubscription.cancel();
+    super.dispose();
   }
 
   Future<Null> _ensureLoggedIn() async {
