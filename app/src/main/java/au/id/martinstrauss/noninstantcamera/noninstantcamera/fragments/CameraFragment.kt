@@ -60,6 +60,7 @@ import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 
 
 /**
@@ -175,8 +176,8 @@ class CameraFragment : Fragment() {
                 // Update the gallery thumbnail with latest picture taken
                 setGalleryThumbnail(photoFile)
 
-                // TODO: navigate to the gallery view instead of just updating the thumbnail.
-                // TODO: pick a random photo instead of the latest picture taken.
+                val gallery = container.findViewById<ImageButton>(R.id.photo_view_button)
+                gallery.simulateClick()
             }
 
             // Implicit broadcasts will be ignored for devices running API
@@ -228,9 +229,10 @@ class CameraFragment : Fragment() {
 
             // In the background, load latest photo taken (if any) for gallery thumbnail
             lifecycleScope.launch(Dispatchers.IO) {
-                outputDirectory.listFiles { file ->
+                val files = outputDirectory.listFiles { file ->
                     EXTENSION_WHITELIST.contains(file.extension.toUpperCase())
-                }.sorted().reversed().firstOrNull()?.let { setGalleryThumbnail(it) }
+                }
+                files.sorted().reversed().elementAtOrNull(Random.nextInt(files.size))?.let { setGalleryThumbnail(it) }
             }
         }
     }
@@ -270,37 +272,8 @@ class CameraFragment : Fragment() {
 
         imageCapture = ImageCapture(imageCaptureConfig)
 
-        // Setup image analysis pipeline that computes average pixel luminance in real time
-        val analyzerConfig = ImageAnalysisConfig.Builder().apply {
-            setLensFacing(lensFacing)
-            // Use a worker thread for image analysis to prevent preview glitches
-            val analyzerThread = HandlerThread("LuminosityAnalysis").apply { start() }
-            setCallbackHandler(Handler(analyzerThread.looper))
-            // In our analysis, we care more about the latest image than analyzing *every* image
-            setImageReaderMode(ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
-            // Set initial target rotation, we will have to call this again if rotation changes
-            // during the lifecycle of this use case
-            setTargetRotation(viewFinder.display.rotation)
-        }.build()
-
-        imageAnalyzer = ImageAnalysis(analyzerConfig).apply {
-            analyzer = LuminosityAnalyzer().apply {
-                onFrameAnalyzed { luma ->
-                    // Values returned from our analyzer are passed to the attached listener
-                    // We log image analysis results here -- you should do something
-                    // useful instead!
-                    Log.d(
-                        TAG, "Average luminosity: $luma. " +
-                                "Frames per second: ${"%.01f".format(framesPerSecond)}"
-                    )
-                }
-            }
-        }
-
         // Apply declared configs to CameraX using the same lifecycle owner
-        CameraX.bindToLifecycle(
-            viewLifecycleOwner, preview, imageCapture, imageAnalyzer
-        )
+        CameraX.bindToLifecycle(viewLifecycleOwner, preview, imageCapture)
     }
 
     /** Method used to re-draw the camera UI controls, called every time configuration changes */

@@ -55,12 +55,15 @@ class GalleryFragment internal constructor() : Fragment() {
         mediaList = rootDirectory.listFiles { file ->
             EXTENSION_WHITELIST.contains(file.extension.toUpperCase())
         }.sorted().reversed().toMutableList()
+
+        // Randomize the order of the photos, for maximum joy.
+        mediaList.shuffle()
     }
 
     override fun onCreateView(
-            inflater: LayoutInflater,
-            container: ViewGroup?,
-            savedInstanceState: Bundle?
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View? = inflater.inflate(R.layout.fragment_gallery, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -92,10 +95,11 @@ class GalleryFragment internal constructor() : Fragment() {
                 val intent = Intent().apply {
                     // Infer media type from file extension
                     val mediaType = MimeTypeMap.getSingleton()
-                            .getMimeTypeFromExtension(mediaFile.extension)
+                        .getMimeTypeFromExtension(mediaFile.extension)
                     // Get URI from our FileProvider implementation
                     val uri = FileProvider.getUriForFile(
-                            view.context, BuildConfig.APPLICATION_ID + ".provider", mediaFile)
+                        view.context, BuildConfig.APPLICATION_ID + ".provider", mediaFile
+                    )
                     // Set the appropriate intent extra, type, action and flags
                     putExtra(Intent.EXTRA_STREAM, uri)
                     type = mediaType
@@ -111,31 +115,33 @@ class GalleryFragment internal constructor() : Fragment() {
         // Handle delete button press
         view.findViewById<ImageButton>(R.id.delete_button).setOnClickListener {
             AlertDialog.Builder(view.context, android.R.style.Theme_Material_Dialog)
-                    .setTitle(getString(R.string.delete_title))
-                    .setMessage(getString(R.string.delete_dialog))
-                    .setIcon(android.R.drawable.ic_dialog_alert)
-                    .setPositiveButton(android.R.string.yes) { _, _ ->
-                        mediaList.getOrNull(mediaViewPager.currentItem)?.let { mediaFile ->
+                .setTitle(getString(R.string.delete_title))
+                .setMessage(getString(R.string.delete_dialog))
+                .setIcon(android.R.drawable.ic_dialog_alert)
+                .setPositiveButton(android.R.string.yes) { _, _ ->
+                    mediaList.getOrNull(mediaViewPager.currentItem)?.let { mediaFile ->
 
-                            // Delete current photo
-                            mediaFile.delete()
+                        // Delete current photo
+                        mediaFile.delete()
 
-                            // Send relevant broadcast to notify other apps of deletion
-                            MediaScannerConnection.scanFile(
-                                    view.context, arrayOf(mediaFile.absolutePath), null, null)
+                        // Send relevant broadcast to notify other apps of deletion
+                        MediaScannerConnection.scanFile(
+                            view.context, arrayOf(mediaFile.absolutePath), null, null
+                        )
 
-                            // Notify our view pager
-                            mediaList.removeAt(mediaViewPager.currentItem)
-                            mediaViewPager.adapter?.notifyDataSetChanged()
+                        // Notify our view pager
+                        mediaList.removeAt(mediaViewPager.currentItem)
+                        mediaViewPager.adapter?.notifyDataSetChanged()
 
-                            // If all photos have been deleted, return to camera
-                            if (mediaList.isEmpty()) {
-                                fragmentManager?.popBackStack()
-                            }
-                        }}
+                        // If all photos have been deleted, return to camera
+                        if (mediaList.isEmpty()) {
+                            fragmentManager?.popBackStack()
+                        }
+                    }
+                }
 
-                    .setNegativeButton(android.R.string.no, null)
-                    .create().showImmersive()
+                .setNegativeButton(android.R.string.no, null)
+                .create().showImmersive()
         }
     }
 }
