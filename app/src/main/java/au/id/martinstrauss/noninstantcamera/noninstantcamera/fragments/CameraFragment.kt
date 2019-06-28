@@ -429,7 +429,7 @@ class CameraFragment : Fragment() {
     companion object {
         private const val TAG = "UncannyCamera"
         private const val FILENAME = "yyyy-MM-dd-HH-mm-ss-SSS"
-        private const val PHOTO_EXTENSION = ".jpeg"
+        private const val PHOTO_EXTENSION = ".jpg"
 
         /** Helper function used to create a timestamped file */
         private fun createFile(baseFolder: File, format: String, extension: String) =

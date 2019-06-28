@@ -24,7 +24,7 @@ import au.id.martinstrauss.noninstantcamera.noninstantcamera.utils.showImmersive
 import au.id.martinstrauss.noninstantcamera.noninstantcamera.R
 
 
-val EXTENSION_WHITELIST = arrayOf("JPG")
+val EXTENSION_WHITELIST = arrayOf("JPG", "JPEG")
 
 /** Fragment used to present the user with a gallery of photos taken */
 class GalleryFragment internal constructor() : Fragment() {
