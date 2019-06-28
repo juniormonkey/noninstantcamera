@@ -232,7 +232,10 @@ class CameraFragment : Fragment() {
                 val files = outputDirectory.listFiles { file ->
                     EXTENSION_WHITELIST.contains(file.extension.toUpperCase())
                 }
-                files.sorted().reversed().elementAtOrNull(Random.nextInt(files.size))?.let { setGalleryThumbnail(it) }
+                if (files.size > 0) {
+                    files.sorted().reversed().elementAtOrNull(Random.nextInt(files.size))
+                        ?.let { setGalleryThumbnail(it) }
+                }
             }
         }
     }
